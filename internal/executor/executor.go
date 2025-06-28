@@ -12,6 +12,7 @@ import (
 	"gosh/internal/ast"
 	"gosh/internal/builtin"
 	"gosh/internal/jobs"
+	"gosh/internal/parser"
 	"gosh/internal/variables"
 )
 
@@ -70,11 +71,42 @@ func (e *Executor) executeSimple(cmd *ast.SimpleCommand) int {
 		return 0
 	}
 
-	name := e.variables.SubstituteVariables(cmd.Name)
+	// detect variable assignments in arguments before command
+	idx := 0
+	for idx < len(cmd.Args)+1 { // include Name
+		var part string
+		if idx == 0 {
+			part = cmd.Name
+		} else {
+			part = cmd.Args[idx-1]
+		}
+		if strings.Contains(part, "=") && !strings.Contains(part, "/") {
+			kv := strings.SplitN(part, "=", 2)
+			e.variables.Set(kv[0], kv[1])
+			idx++
+			if idx == 1 {
+				// shift command name
+				if len(cmd.Args) > 0 {
+					cmd.Name = cmd.Args[0]
+					cmd.Args = cmd.Args[1:]
+					continue
+				} else {
+					return 0 // only assignment
+				}
+			} else {
+				cmd.Args = append(cmd.Args[:idx-1], cmd.Args[idx:]...)
+				continue
+			}
+		}
+		break
+	}
 
+	name := e.variables.SubstituteVariables(cmd.Name)
 	args := make([]string, len(cmd.Args))
 	for i, arg := range cmd.Args {
-		args[i] = e.variables.SubstituteVariables(arg)
+		expanded := parser.ExpandVariables(arg, e.variables.Get)
+		// arithmetic $(( ))
+		args[i] = expanded
 	}
 
 	if builtin := e.builtins.Get(name); builtin != nil {

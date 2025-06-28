@@ -1,6 +1,6 @@
 // gosh - Go Shell
 // POSIX-compatible shell implementation written from scratch in Go.
-// Copyright (c) 2024 gosh project - 0BSD License
+// Copyright (c) 2025 gosh project - 0BSD License
 
 package main
 

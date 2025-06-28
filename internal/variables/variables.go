@@ -292,3 +292,49 @@ func (m *Manager) SubstituteVariables(text string) string {
 
 	return result
 }
+
+func (m *Manager) EvalArithmetic(expr string) (int, error) {
+	// very limited: supports VAR op INT or INT op VAR or INT op INT with + - * /
+	expr = strings.TrimSpace(expr)
+	ops := []string{"+", "-", "*", "/"}
+	for _, op := range ops {
+		if strings.Contains(expr, op) {
+			parts := strings.Split(expr, op)
+			if len(parts) != 2 {
+				return 0, fmt.Errorf("bad expression")
+			}
+			aStr := strings.TrimSpace(parts[0])
+			bStr := strings.TrimSpace(parts[1])
+			aVal, err := m.arithOperand(aStr)
+			if err != nil {
+				return 0, err
+			}
+			bVal, err := m.arithOperand(bStr)
+			if err != nil {
+				return 0, err
+			}
+			switch op {
+			case "+":
+				return aVal + bVal, nil
+			case "-":
+				return aVal - bVal, nil
+			case "*":
+				return aVal * bVal, nil
+			case "/":
+				if bVal == 0 {
+					return 0, fmt.Errorf("division by zero")
+				}
+				return aVal / bVal, nil
+			}
+		}
+	}
+	return m.arithOperand(expr)
+}
+
+func (m *Manager) arithOperand(tok string) (int, error) {
+	if v, err := strconv.Atoi(tok); err == nil {
+		return v, nil
+	}
+	val := m.Get(tok)
+	return strconv.Atoi(val)
+}

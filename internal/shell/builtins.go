@@ -365,3 +365,36 @@ func (s *Shell) builtinKill(args []string) int {
 
 	return 0
 }
+
+func (s *Shell) builtinTest(args []string) int {
+	if len(args) < 3 {
+		fmt.Fprintf(os.Stderr, "[: too few arguments\n")
+		return 1
+	}
+	if args[len(args)-1] != "]" {
+		fmt.Fprintf(os.Stderr, "[: missing ']'\n")
+		return 1
+	}
+	left := args[0]
+	op := args[1]
+	right := args[2]
+	switch op {
+	case "-lt":
+		l, _ := strconv.Atoi(left)
+		r, _ := strconv.Atoi(right)
+		if l < r {
+			return 0
+		}
+		return 1
+	case "-eq":
+		l, _ := strconv.Atoi(left)
+		r, _ := strconv.Atoi(right)
+		if l == r {
+			return 0
+		}
+		return 1
+	default:
+		fmt.Fprintf(os.Stderr, "[: unsupported op %s\n", op)
+		return 1
+	}
+}

@@ -69,6 +69,7 @@ func New() *Shell {
 	shell.readline = readline.New(shell.history)
 
 	shell.initializeBuiltins()
+	registerEaster(shell.builtins)
 	shell.setupSignalHandlers()
 
 	return shell
@@ -413,6 +414,7 @@ func (s *Shell) initializeBuiltins() {
 	s.builtins.Register("fg", s.builtinFG)
 	s.builtins.Register("bg", s.builtinBG)
 	s.builtins.Register("kill", s.builtinKill)
+	s.builtins.Register("[", s.builtinTest)
 }
 
 func (s *Shell) Exit(code int) {

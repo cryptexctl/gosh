@@ -49,6 +49,16 @@ func (p *Parser) Parse(input string) ([]*ast.Command, error) {
 }
 
 func (p *Parser) parseCommand() (*ast.Command, error) {
+	if tok := p.current(); tok.Type == TokenWord {
+		switch tok.Value {
+		case "if":
+			return p.parseIf()
+		case "while":
+			return p.parseWhile()
+		case "for":
+			return p.parseFor()
+		}
+	}
 	return p.parsePipeline()
 }
 
@@ -299,8 +309,26 @@ func (l *Lexer) addToken(tokenType TokenType, value string) {
 }
 
 func ExpandVariables(text string, getVar func(string) string) string {
-	varRegex := regexp.MustCompile(`\$(\w+)|\$\{([^}]+)\}`)
+	arithRe := regexp.MustCompile(`\$\(\(([^)]+)\)\)`)
+	text = arithRe.ReplaceAllStringFunc(text, func(m string) string {
+		inner := strings.TrimSpace(m[3 : len(m)-2])
+		if getVar == nil {
+			return m
+		}
+		varRe := regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+		replaced := varRe.ReplaceAllStringFunc(inner, func(v string) string {
+			return getVar(v)
+		})
+		parts := strings.FieldsFunc(replaced, func(r rune) bool {
+			return r == '+' || r == '-' || r == '*' || r == '/'
+		})
+		if len(parts) == 2 {
+			inner = replaced
+		}
+		return replaced
+	})
 
+	varRegex := regexp.MustCompile(`\$(\w+)|\$\{([^}]+)\}`)
 	return varRegex.ReplaceAllStringFunc(text, func(match string) string {
 		var varName string
 		if strings.HasPrefix(match, "${") {
@@ -322,4 +350,148 @@ func ExpandGlobs(pattern string) ([]string, error) {
 	}
 
 	return []string{pattern}, nil
+}
+
+func (p *Parser) parseIf() (*ast.Command, error) {
+	p.advance()
+
+	condTokens := []Token{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "then") {
+		condTokens = append(condTokens, p.current())
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'then' keyword in if statement")
+	}
+	p.advance()
+
+	thenTokens := []Token{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "fi") {
+		thenTokens = append(thenTokens, p.current())
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'fi' to close if statement")
+	}
+	p.advance()
+
+	condParser := &Parser{tokens: condTokens, pos: 0}
+	condCmds, err := condParser.parsePipeline()
+	if err != nil {
+		return nil, err
+	}
+	thenParser := &Parser{tokens: thenTokens, pos: 0}
+	thenCmd, err := thenParser.Parse(strings.Join(tokensToStrings(thenTokens), " "))
+	if err != nil {
+		return nil, err
+	}
+	var thenCmdNode *ast.Command
+	if len(thenCmd) > 0 {
+		thenCmdNode = thenCmd[0]
+	}
+	return &ast.Command{
+		Type: ast.CommandIf,
+		If: &ast.IfCommand{
+			Condition: condCmds,
+			Then:      thenCmdNode,
+		},
+	}, nil
+}
+
+func tokensToStrings(ts []Token) []string {
+	var s []string
+	for _, t := range ts {
+		s = append(s, t.Value)
+	}
+	return s
+}
+
+func (p *Parser) parseWhile() (*ast.Command, error) {
+	p.advance()
+	condTokens := []Token{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "do") {
+		condTokens = append(condTokens, p.current())
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'do' in while")
+	}
+	p.advance()
+
+	bodyTokens := []Token{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "done") {
+		bodyTokens = append(bodyTokens, p.current())
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'done' in while")
+	}
+	p.advance()
+
+	condParser := &Parser{tokens: condTokens, pos: 0}
+	condCmd, _ := condParser.parsePipeline()
+	bodyParser := &Parser{tokens: bodyTokens, pos: 0}
+	bodyCmds, _ := bodyParser.Parse(strings.Join(tokensToStrings(bodyTokens), " "))
+	var bodyCmd *ast.Command
+	if len(bodyCmds) > 0 {
+		bodyCmd = bodyCmds[0]
+	}
+	return &ast.Command{
+		Type: ast.CommandWhile,
+		While: &ast.WhileCommand{
+			Condition: condCmd,
+			Body:      bodyCmd,
+		},
+	}, nil
+}
+
+func (p *Parser) parseFor() (*ast.Command, error) {
+	p.advance()
+	if p.current().Type != TokenWord {
+		return nil, fmt.Errorf("expected variable after for")
+	}
+	varName := p.current().Value
+	p.advance()
+	if !(p.current().Type == TokenWord && p.current().Value == "in") {
+		return nil, fmt.Errorf("expected 'in' after for variable")
+	}
+	p.advance()
+
+	values := []string{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "do") {
+		if p.current().Type == TokenWord {
+			values = append(values, p.current().Value)
+		}
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'do' in for")
+	}
+	p.advance()
+
+	bodyTokens := []Token{}
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "done") {
+		bodyTokens = append(bodyTokens, p.current())
+		p.advance()
+	}
+	if p.pos >= len(p.tokens) {
+		return nil, fmt.Errorf("expected 'done' to close for")
+	}
+	p.advance()
+
+	bodyParser := &Parser{tokens: bodyTokens, pos: 0}
+	bodyCmds, _ := bodyParser.Parse(strings.Join(tokensToStrings(bodyTokens), " "))
+	var bodyCmd *ast.Command
+	if len(bodyCmds) > 0 {
+		bodyCmd = bodyCmds[0]
+	}
+
+	return &ast.Command{
+		Type: ast.CommandFor,
+		For: &ast.ForCommand{
+			Variable: varName,
+			Values:   values,
+			Body:     bodyCmd,
+		},
+	}, nil
 }
