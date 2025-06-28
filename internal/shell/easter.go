@@ -22,7 +22,7 @@ func registerEaster(b *builtin.Manager) {
 		return 0
 	})
 
-	b.Register("oh my", func(args []string) int {
+	b.Register("ohmy", func(args []string) int {
 		path, _ := os.Executable()
 		fmt.Printf("gosh! (%s)\n", path)
 		return 0
