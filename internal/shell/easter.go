@@ -24,7 +24,7 @@ func registerEaster(b *builtin.Manager) {
 
 	b.Register("ohmy", func(args []string) int {
 		path, _ := os.Executable()
-		fmt.Printf("gosh! (%s)\n", path)
+		fmt.Printf("%s\n", path)
 		return 0
 	})
 }
