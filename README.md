@@ -7,7 +7,7 @@ A POSIX-compatible shell written from scratch in Go.
 * **Single static binary** – easy to distribute, cross-compile, no libc deps.
 * **Memory-safe Go** – no UB, no legacy C code.
 * **Fast startup** – <5 ms cold start on modern CPUs.
-* **Built-in history with arrows** – ↑ / ↓ navigation like modern shells.
+* **Built-in history with arrows** – history navigation like modern shells.
 * **UTF-8 first class** – proper multibyte input handling.
 * **0BSD license** – public-domain-like freedom.
 * **Extensible** – drop-in Go plugins or built-ins.
@@ -30,7 +30,9 @@ A POSIX-compatible shell written from scratch in Go.
 ## Install
 
 ```bash
-go install github.com/cryptexctl/gosh@latest
+git clone https://github.com/cryptexctl/gosh
+cd gosh
+go install ./...
 ```
 
 ## Usage
