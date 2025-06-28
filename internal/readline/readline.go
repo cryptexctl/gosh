@@ -3,10 +3,14 @@ package readline
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"gosh/internal/history"
+
+	"golang.org/x/term"
 )
 
 type Manager struct {
@@ -23,55 +27,100 @@ func New(hist *history.Manager) *Manager {
 }
 
 func (m *Manager) ReadLine(prompt string) (string, error) {
-	fmt.Print(prompt)
-
-	if !m.scanner.Scan() {
-		if err := m.scanner.Err(); err != nil {
-			return "", err
-		}
-		return "", fmt.Errorf("EOF")
-	}
-
-	line := m.scanner.Text()
-	return line, nil
-}
-
-func (m *Manager) ReadPassword(prompt string) (string, error) {
-	fmt.Print(prompt)
-
-	oldState, err := makeRaw(0)
+	state, err := makeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return "", err
+		fmt.Print(prompt)
+		if !m.scanner.Scan() {
+			if err := m.scanner.Err(); err != nil {
+				return "", err
+			}
+			return "", fmt.Errorf("EOF")
+		}
+		line := m.scanner.Text()
+		return line, nil
 	}
-	defer restore(0, oldState)
+	defer restore(int(os.Stdin.Fd()), state)
 
-	var password []byte
-	var b [1]byte
+	m.WriteString(prompt)
+
+	var buf []rune
+	histIdx := m.history.Size()
+	pending := make([]byte, 0, 4)
+
+	show := func() {
+		m.WriteString("\r\033[K")
+		m.WriteString(prompt)
+		m.WriteString(string(buf))
+	}
 
 	for {
-		n, err := os.Stdin.Read(b[:])
+		var b [1]byte
+		_, err := os.Stdin.Read(b[:])
 		if err != nil {
 			return "", err
 		}
-		if n == 0 {
+		byteVal := b[0]
+
+		if len(pending) == 0 && (byteVal < 32 || byteVal == 127) {
+			switch byteVal {
+			case '\r', '\n':
+				m.WriteString("\r\n")
+				line := string(buf)
+				if line != "" {
+					m.history.Add(line)
+				}
+				return line, nil
+			case 127, 8:
+				if len(buf) > 0 {
+					buf = buf[:len(buf)-1]
+					show()
+				}
+				continue
+			case 27:
+				var seq [2]byte
+				if _, err := os.Stdin.Read(seq[:]); err == nil && seq[0] == '[' {
+					switch seq[1] {
+					case 'A':
+						if histIdx > 0 {
+							histIdx--
+							buf = []rune(m.history.Get(histIdx))
+							show()
+						}
+					case 'B':
+						if histIdx < m.history.Size()-1 {
+							histIdx++
+							buf = []rune(m.history.Get(histIdx))
+						} else {
+							histIdx = m.history.Size()
+							buf = nil
+						}
+						show()
+					}
+				}
+				continue
+			case 3:
+				m.WriteString("^C\r\n")
+				return "", fmt.Errorf("interrupt")
+			case 4:
+				if len(buf) == 0 {
+					m.WriteString("\r\n")
+					return "", io.EOF
+				}
+				continue
+			}
 			continue
 		}
-
-		if b[0] == '\n' || b[0] == '\r' {
-			break
-		}
-
-		if b[0] == 127 || b[0] == 8 {
-			if len(password) > 0 {
-				password = password[:len(password)-1]
+		pending = append(pending, byteVal)
+		if r, size := utf8.DecodeRune(pending); r != utf8.RuneError {
+			if size == len(pending) {
+				buf = append(buf, r)
+				m.WriteString(string(pending))
+				pending = pending[:0]
 			}
-		} else {
-			password = append(password, b[0])
+		} else if len(pending) >= 4 {
+			pending = pending[:0]
 		}
 	}
-
-	fmt.Println()
-	return string(password), nil
 }
 
 func (m *Manager) ResetLine() {
@@ -156,10 +205,17 @@ func (m *Manager) Refresh() {
 }
 
 func makeRaw(fd int) (interface{}, error) {
-	return nil, fmt.Errorf("raw mode not supported on this platform")
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, err
+	}
+	return oldState, nil
 }
 
 func restore(fd int, state interface{}) error {
+	if st, ok := state.(*term.State); ok {
+		return term.Restore(fd, st)
+	}
 	return nil
 }
 

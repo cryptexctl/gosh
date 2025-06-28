@@ -27,6 +27,10 @@ func (p *Parser) Parse(input string) ([]*ast.Command, error) {
 	var commands []*ast.Command
 
 	for p.pos < len(p.tokens) {
+		if p.current().Type == TokenNewline {
+			p.advance()
+			continue
+		}
 		if p.current().Type == TokenEOF {
 			break
 		}
@@ -40,7 +44,7 @@ func (p *Parser) Parse(input string) ([]*ast.Command, error) {
 			commands = append(commands, cmd)
 		}
 
-		if p.pos < len(p.tokens) && p.current().Type == TokenSemicolon {
+		if p.pos < len(p.tokens) && (p.current().Type == TokenSemicolon || p.current().Type == TokenNewline) {
 			p.advance()
 		}
 	}
@@ -59,7 +63,30 @@ func (p *Parser) parseCommand() (*ast.Command, error) {
 			return p.parseFor()
 		}
 	}
-	return p.parsePipeline()
+	left, err := p.parsePipeline()
+	if err != nil {
+		return nil, err
+	}
+	cmds := []*ast.Command{left}
+	ops := []string{}
+	for p.pos < len(p.tokens) && (p.current().Type == TokenAnd || p.current().Type == TokenOr) {
+		opTok := p.current()
+		p.advance()
+		right, err := p.parsePipeline()
+		if err != nil {
+			return nil, err
+		}
+		cmds = append(cmds, right)
+		if opTok.Type == TokenAnd {
+			ops = append(ops, "&&")
+		} else {
+			ops = append(ops, "||")
+		}
+	}
+	if len(cmds) == 1 {
+		return left, nil
+	}
+	return &ast.Command{Type: ast.CommandList, List: &ast.List{Commands: cmds, Operators: ops}}, nil
 }
 
 func (p *Parser) parsePipeline() (*ast.Command, error) {
@@ -105,6 +132,8 @@ func (p *Parser) parseSimpleCommand() (*ast.Command, error) {
 				return nil, err
 			}
 			redirects = append(redirects, redirect)
+		case TokenNewline:
+			goto done
 		default:
 			goto done
 		}
@@ -174,6 +203,7 @@ const (
 	TokenRedirectIn
 	TokenRedirectAppend
 	TokenSemicolon
+	TokenNewline
 	TokenAnd
 	TokenOr
 	TokenBackground
@@ -202,7 +232,12 @@ func NewLexer(input string) *Lexer {
 func (l *Lexer) Tokenize() []Token {
 	for l.pos < len(l.input) {
 		if unicode.IsSpace(rune(l.input[l.pos])) {
-			l.skipWhitespace()
+			if l.input[l.pos] == '\n' {
+				l.addToken(TokenNewline, "\n")
+				l.pos++
+			} else {
+				l.skipWhitespace()
+			}
 			continue
 		}
 
@@ -251,7 +286,7 @@ func (l *Lexer) Tokenize() []Token {
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.pos < len(l.input) && unicode.IsSpace(rune(l.input[l.pos])) {
+	for l.pos < len(l.input) && unicode.IsSpace(rune(l.input[l.pos])) && l.input[l.pos] != '\n' {
 		l.pos++
 	}
 }
@@ -366,14 +401,24 @@ func (p *Parser) parseIf() (*ast.Command, error) {
 	p.advance()
 
 	thenTokens := []Token{}
-	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "fi") {
+	for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && (p.current().Value == "else" || p.current().Value == "fi")) {
 		thenTokens = append(thenTokens, p.current())
 		p.advance()
 	}
+
+	var elseTokens []Token
+	if p.pos < len(p.tokens) && p.current().Type == TokenWord && p.current().Value == "else" {
+		p.advance() // skip 'else'
+		for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "fi") {
+			elseTokens = append(elseTokens, p.current())
+			p.advance()
+		}
+	}
+
 	if p.pos >= len(p.tokens) {
 		return nil, fmt.Errorf("expected 'fi' to close if statement")
 	}
-	p.advance()
+	p.advance() // skip 'fi'
 
 	condParser := &Parser{tokens: condTokens, pos: 0}
 	condCmds, err := condParser.parsePipeline()
@@ -389,11 +434,43 @@ func (p *Parser) parseIf() (*ast.Command, error) {
 	if len(thenCmd) > 0 {
 		thenCmdNode = thenCmd[0]
 	}
+
+	var elseCmdNode *ast.Command
+	if len(elseTokens) > 0 {
+		elseParser := &Parser{tokens: elseTokens, pos: 0}
+		elseCmds, _ := elseParser.Parse(strings.Join(tokensToStrings(elseTokens), " "))
+		if len(elseCmds) > 0 {
+			elseCmdNode = elseCmds[0]
+		}
+	}
+
+	var elifTokens [][]Token
+	for p.pos < len(p.tokens) && p.current().Type == TokenWord && p.current().Value == "elif" {
+		p.advance() // skip 'elif'
+		condElif := []Token{}
+		for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && p.current().Value == "then") {
+			condElif = append(condElif, p.current())
+			p.advance()
+		}
+		if p.pos >= len(p.tokens) {
+			return nil, fmt.Errorf("expected 'then' in elif")
+		}
+		p.advance() // skip 'then'
+		bodyElif := []Token{}
+		for p.pos < len(p.tokens) && !(p.current().Type == TokenWord && (p.current().Value == "elif" || p.current().Value == "else" || p.current().Value == "fi")) {
+			bodyElif = append(bodyElif, p.current())
+			p.advance()
+		}
+		elifTokens = append(elifTokens, append(condElif, Token{Type: TokenSemicolon, Value: ";;"}))
+		elifTokens = append(elifTokens, bodyElif)
+	}
+
 	return &ast.Command{
 		Type: ast.CommandIf,
 		If: &ast.IfCommand{
 			Condition: condCmds,
 			Then:      thenCmdNode,
+			Else:      elseCmdNode,
 		},
 	}, nil
 }

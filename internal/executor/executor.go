@@ -71,9 +71,8 @@ func (e *Executor) executeSimple(cmd *ast.SimpleCommand) int {
 		return 0
 	}
 
-	// detect variable assignments in arguments before command
 	idx := 0
-	for idx < len(cmd.Args)+1 { // include Name
+	for idx < len(cmd.Args)+1 {
 		var part string
 		if idx == 0 {
 			part = cmd.Name
@@ -85,13 +84,12 @@ func (e *Executor) executeSimple(cmd *ast.SimpleCommand) int {
 			e.variables.Set(kv[0], kv[1])
 			idx++
 			if idx == 1 {
-				// shift command name
 				if len(cmd.Args) > 0 {
 					cmd.Name = cmd.Args[0]
 					cmd.Args = cmd.Args[1:]
 					continue
 				} else {
-					return 0 // only assignment
+					return 0
 				}
 			} else {
 				cmd.Args = append(cmd.Args[:idx-1], cmd.Args[idx:]...)
