@@ -11,14 +11,12 @@ import (
 
 func registerEaster(b *builtin.Manager) {
 	b.Register("gosha", func(args []string) int {
-		path, _ := os.Executable()
-		fmt.Printf("Это не смешно! (%s)\n", path)
+		fmt.Printf("Это не смешно!\n")
 		return 0
 	})
 
 	b.Register("bash", func(args []string) int {
-		path, _ := os.Executable()
-		fmt.Printf("Bash is too old. Try %s\n", path)
+		fmt.Printf("Bash is too old.\n")
 		return 0
 	})
 
