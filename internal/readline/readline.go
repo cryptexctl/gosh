@@ -44,13 +44,18 @@ func (m *Manager) ReadLine(prompt string) (string, error) {
 	m.WriteString(prompt)
 
 	var buf []rune
+	cur := 0 // cursor index inside buf
 	histIdx := m.history.Size()
 	pending := make([]byte, 0, 4)
 
 	show := func() {
-		m.WriteString("\r\033[K")
+		m.WriteString("\r\033[K") // CR + clear line
 		m.WriteString(prompt)
 		m.WriteString(string(buf))
+		right := len(buf) - cur
+		if right > 0 {
+			m.WriteString(fmt.Sprintf("\033[%dD", right))
+		}
 	}
 
 	for {
@@ -72,8 +77,11 @@ func (m *Manager) ReadLine(prompt string) (string, error) {
 				return line, nil
 			case 127, 8:
 				if len(buf) > 0 {
-					buf = buf[:len(buf)-1]
-					show()
+					if cur > 0 {
+						buf = append(buf[:cur-1], buf[cur:]...)
+						cur--
+						show()
+					}
 				}
 				continue
 			case 27:
@@ -95,6 +103,16 @@ func (m *Manager) ReadLine(prompt string) (string, error) {
 							buf = nil
 						}
 						show()
+					case 'C': // Right
+						if cur < len(buf) {
+							cur++
+							m.WriteString("\033[1C")
+						}
+					case 'D': // Left
+						if cur > 0 {
+							cur--
+							m.WriteString("\033[1D")
+						}
 					}
 				}
 				continue
@@ -113,8 +131,15 @@ func (m *Manager) ReadLine(prompt string) (string, error) {
 		pending = append(pending, byteVal)
 		if r, size := utf8.DecodeRune(pending); r != utf8.RuneError {
 			if size == len(pending) {
-				buf = append(buf, r)
-				m.WriteString(string(pending))
+				if cur == len(buf) {
+					buf = append(buf, r)
+					m.WriteString(string(pending))
+				} else {
+					// insert in middle
+					buf = append(buf[:cur], append([]rune{r}, buf[cur:]...)...)
+				}
+				cur++
+				show()
 				pending = pending[:0]
 			}
 		} else if len(pending) >= 4 {
