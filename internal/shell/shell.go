@@ -114,6 +114,12 @@ func (s *Shell) initialize(args []string) error {
 		s.loadStartupFiles()
 	}
 
+	// env override: skip rc/profile if GOSH_NORC set
+	if os.Getenv("GOSH_NORC") != "" {
+		s.config.NoRC = true
+		s.config.NoProfile = true
+	}
+
 	return nil
 }
 

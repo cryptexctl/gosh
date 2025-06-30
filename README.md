@@ -43,6 +43,16 @@ gosh -c "echo hi"    # run one command
 gosh script.sh       # run script file
 ```
 
+Environment:
+
+`GOSH_NORC=1` – skip loading profile/rc files (useful when system bashrc contains unsupported syntax).
+
+```bash
+# skip rc/profile
+GOSH_NORC=1 gosh
+```
+
 ## License
 
-0BSD – do whatever you want. 
+0BSD – do whatever you want.
+
