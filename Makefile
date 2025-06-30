@@ -1,7 +1,7 @@
 .PHONY: build install clean test run fmt vet lint help
 
 BINARY_NAME=gosh
-VERSION?=1.0.0
+VERSION?=1.0.4
 BUILD_TIME=$(shell date +%Y-%m-%d_%H:%M:%S)
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)"

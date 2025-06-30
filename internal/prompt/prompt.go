@@ -75,8 +75,8 @@ func (m *Manager) expandPrompt(prompt string, exitCode int) string {
 		"\\j":  fmt.Sprintf("%d", m.getJobsCount()),
 		"\\l":  m.getTTY(),
 		"\\s":  "gosh",
-		"\\v":  "1.0.0",
-		"\\V":  "1.0.0",
+		"\\v":  "1.0.4",
+		"\\V":  "1.0.4",
 		"\\\\": "\\",
 	}
 

@@ -177,7 +177,7 @@ func (s *Shell) initializeEnvironment() error {
 
 	s.variables.Set("PWD", s.currentDir)
 	s.variables.Set("SHLVL", fmt.Sprintf("%d", s.getSHLVL()+1))
-	s.variables.Set("GOSH_VERSION", "1.0.0")
+	s.variables.Set("GOSH_VERSION", "1.0.4")
 	if execPath, err := os.Executable(); err == nil {
 		s.variables.Set("SHELL", execPath)
 	} else {
